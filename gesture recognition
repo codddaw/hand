@@ -1,0 +1,151 @@
+import mediapipe as mp
+import cv2 as cv
+import numpy as np
+import time
+
+def get_COS(v1, v2):
+    COS = np.dot(v1, v2) / (np.sqrt(np.sum(v1 * v1)) * np.sqrt(np.sum(v2 * v2)))
+    COS = np.arccos(COS) / 3.14 * 180
+
+    return COS
+
+#规则
+def get_str_guester(out_fingers, lt_GJp):
+    if len(out_fingers) == 1 and out_fingers[0] == 8:
+        v1 = lt_GJp[6] - lt_GJp[7]
+        v2 = lt_GJp[8] - lt_GJp[7]
+
+        COS = get_COS(v1, v2)
+
+        if COS < 160:
+            str_guester = "9"
+        else:
+            str_guester = "1"
+
+    elif len(out_fingers) == 2 and out_fingers[0] == 8 and out_fingers[1] == 12:
+        str_guester = "2"
+    elif len(out_fingers) ==2 and out_fingers[0] == 4 and out_fingers[1]==8:
+        v1 = lt_GJp[6] - lt_GJp[7]
+        v2 = lt_GJp[8] - lt_GJp[7]
+
+        cos = get_COS(v1, v2)
+
+        if cos < 160:
+            str_guester = "9"
+        else:
+            str_guester = "8"
+    elif len(out_fingers) == 2 and out_fingers[0] == 4 and out_fingers[1] == 20:
+        str_guester = "6"
+
+    elif len(out_fingers) == 2 and out_fingers[0] == 4 and out_fingers[1] == 8:
+        str_guester = "8"
+
+    elif len(out_fingers) == 3 and out_fingers[0] == 8 and out_fingers[1] == 12 and out_fingers[2] == 16:
+        str_guester = "3"
+    elif len(out_fingers) == 3 and out_fingers[0] == 12 and out_fingers[1] == 16 and out_fingers[2] == 20:
+        str_guester = "3"
+    elif len(out_fingers) == 3 and out_fingers[0] == 4 and out_fingers[1] == 8 and out_fingers[2] == 12:
+        str_guester = "7"
+
+    elif len(out_fingers) == 4 and out_fingers[0] == 8 and out_fingers[1] == 12 and out_fingers[2] == 16 and out_fingers[
+        3] == 20:
+        str_guester = "4"
+
+    elif len(out_fingers) == 5:
+        str_guester = "5"
+
+    elif len(out_fingers) == 0:
+        str_guester = "10"
+
+    else:
+        str_guester = " "
+
+    return str_guester
+
+
+if __name__ == "__main__":
+
+    cap = cv.VideoCapture(0)
+    # 定义手 检测对象
+    mpHands = mp.solutions.hands            #手部检测对象
+    hands = mpHands.Hands()                 #手部检测器 内有三个参数，跟踪加检测
+    mpDraw = mp.solutions.drawing_utils     #关键点
+    Ptime = 0
+    Ctime = 0
+    while True:
+
+        # 读取一帧图像
+        success, img = cap.read()
+        img = cv.flip(img, 1)
+        if not success:
+            continue
+        IH, IW, _ = np.shape(img)
+
+        # 转换为RGB
+        imgRGB = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+
+        # 得到检测结果
+        results = hands.process(imgRGB)
+
+        if results.multi_hand_landmarks:               #有关键点被检测
+            for hand in results.multi_hand_landmarks:  #多手检测
+
+                mpDraw.draw_landmarks(img, hand, mpHands.HAND_CONNECTIONS)    #hand ：关键点  ，连线
+
+            # 采集所有关键点的坐标
+                lt_GJp = []
+                for i in range(21):
+                    pos_x = hand.landmark[i].x * IW
+                    pos_y = hand.landmark[i].y * IH
+                    lt_GJp.append([int(pos_x), int(pos_y)])
+
+            # 构造凸包点
+                lt_GJp = np.array(lt_GJp, dtype=np.int32)    #转换类型
+                hull_index = [0, 1, 2, 3, 6, 10, 14, 19, 18, 17, 10]
+                hull = cv.convexHull(lt_GJp[hull_index, :])    #构造凸包
+            # 绘制凸包
+                cv.polylines(img, [hull], True, (0, 255, 255), 2)
+
+            # 查找外部的点数
+                n_fig = -1
+                ZJ = [4, 8, 12, 16, 20]
+                out_fingers = []
+
+                for i in ZJ:
+                    ZB = (int(lt_GJp[i][0]), int(lt_GJp[i][1]))  #点的坐标
+                    dist = cv.pointPolygonTest(hull, ZB, True)     #判断是否在凸包外
+                    if dist < 0:                                   #在外
+                        out_fingers.append(i)
+
+            # print(up_fingers)
+            # print(list_lms)
+            # print(np.shape(list_lms))
+                str_guester = get_str_guester(out_fingers, lt_GJp)
+
+                cv.putText(img, ' %s' % (str_guester), (int(pos_x), int(pos_y)-20), cv.FONT_HERSHEY_SIMPLEX, 4, (0, 0, 255), 4,
+                        cv.LINE_AA)
+
+                for i in ZJ:
+                    pos_x = hand.landmark[i].x * IW
+                    pos_y = hand.landmark[i].y * IH
+                # 画点
+                    #pox_x = int(hand.landmark[9].x * IW)
+                    #pox_y = int(hand.landmark[9].y * IH)
+                   # pox_x1 = int(hand.landmark[17].x * IW)
+                   # pox_y1 = int(hand.landmark[17].x * IH)
+                   # r = pox_y1 - pox_y
+                    #cv.rectangle(img, (pox_x1 - r - 10, pox_y1 + r + 10), (pox_x1 + r + 20, pox_y1 - r - 20), 255, 2)
+                    cv.circle(img, (int(pos_x), int(pos_y)), 3, (255, 0, 0), -1)
+        Ctime = time.time()
+        fps = int(1 / (Ctime - Ptime))
+        Ptime = Ctime
+        cv.putText(img, f"FPS : {int(fps)}", (30, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv.imshow("hands", img)
+
+        key = cv.waitKey(50)
+
+        # 按键 "Esc" 退出
+        if key == 27:
+            break
+    cap.release()
+cv.destroyAllWindows()
